@@ -1,0 +1,281 @@
+<html>
+<head>
+	<title>L-Systems</title>
+	<script type="text/javascript" src="template.js"></script>
+	<script type="text/javascript">
+var w = 120;
+var h = 120;
+var map = [];
+var mx = w / 2;
+var my = h / 2;
+var rules = 'f.6=f[i]f\n\
+f.1=Af\n\
+f.1=Sf\n\
+f.1=Wf\n\
+f.1=Df\n\
+i=[q][e][z]c\n\
+q.2=a[e]r[z]q\n\
+q.8=qa\n\
+e.2=w[q]r[c]e\n\
+e.8=ew\n\
+z.2=s[q]r[c]z\n\
+z.8=zs\n\
+c.2=d[e]r[z]c\n\
+c.8=cd\n\
+D.4=Dd\n\
+D.6=D\n\
+A.4=Aa\n\
+A.6=A\n\
+W.4=Ww\n\
+W.6=W\n\
+S.4=Ss\n\
+S.6=S';
+var func = 'r=rect\n\
+w=mu\n\
+a=ml\n\
+s=md\n\
+d=mr\n\
+[=push\n\
+]=pop\n\
+@=rep';
+
+function wrapc(c, l) { return (c>0 && c<l) ? c : (c>=l ? c%l : l+(c%l)); };
+function pad(num, size){ return ('000000000' + num).substr(-size); }
+
+	//=======================
+		var textFile = null;
+		var s;
+		var stack = [];
+		function e(id) {
+			return document.getElementById(id);
+		}
+
+		var funcs = {
+			fwd:function (x, y, a, l, ctx, da, dl) {
+				funcs.rep = funcs.fwd;
+				var nx = x + Math.cos(a) * l;
+				var ny = y + Math.sin(a) * l;
+				ctx.moveTo(x, y);
+				ctx.lineTo(nx, ny);
+				return [nx, ny, a, l];
+			},
+
+			tl:function (x, y, a, l, ctx, da, dl) {
+				funcs.rep = funcs.tl;
+				return [x, y, a - da, l];
+			},
+
+			tr:function (x, y, a, l, ctx, da, dl) {
+				funcs.rep = funcs.tr;
+				return [x, y, a + da, l];
+			},
+
+			push:function (x, y, a, l, ctx, da, dl) {//XXX push/pop rep!
+				stack.push([x, y, ca, l]);
+				return [x, y, a, l];
+			},
+
+			pop:function (x, y, a, l, ctx, da, dl) {
+				item = stack.pop();
+				return (typeof item != undefined) > 0 ? item : [x, y, a, l];
+			},
+
+			point:function (x, y, a, l, ctx, da, dl) {
+				ctx.fillRect(x, y, 1, 1);
+				return [x, y, a, l];
+			},
+
+			rect:function (x, y, a, l, ctx, da, dl) {
+				ctx.fillRect(x, y, l, l);
+				map[wrapc(x / l, w)][wrapc(y / l, h)] += 1;
+				return [x, y, a, l];
+			},
+
+			mu:function (x, y, a, l, ctx, da, dl) {
+				funcs.rep = funcs.mu;
+				return [x, y - (+l), a, l];
+			},
+
+			md:function (x, y, a, l, ctx, da, dl) {
+				funcs.rep = funcs.md;
+				return [x, y + (+l), a, l];
+			},
+
+			mr:function (x, y, a, l, ctx, da, dl) {
+				funcs.rep = funcs.mr;
+				return [x + (+l), y, a, l];
+			},
+
+			ml:function (x, y, a, l, ctx, da, dl) {
+				funcs.rep = funcs.ml;
+				return [x - (+l), y, a, l];
+			},
+			rep:function (x, y, a, l, ctx, da, dl) {
+				return [x, y, a, l];//dummy declared to appear in help
+			},
+		};
+
+		function draw(s, assocc) {
+			var w = e('cv').width;
+			var h = e('cv').height;
+			var ctx = e('cv').getContext('2d');
+			ctx.fillStyle = "rgba(0,0,0,1)";
+			ctx.fillRect( 0 , 0 , w , h );
+			ctx.rect( 0 , 0 , w , h );
+			ctx.clip();
+			ctx.fillStyle = "rgba(100,200,100,0.2)";
+			ctx.strokeStyle = "rgba(100,200,100,1)";
+
+			dl = 1;
+			da = Math.PI / 180 * 90;//XXX angle 90, probably nto needed at all
+			ia = -Math.PI / 2;
+
+			ca = ia; x = w / 2; y = h / 2; l = 4;//XXX len and others...
+			for (i = 0; i < s.length; i++) {
+				ctx.beginPath();
+				[x, y, ca, l] = typeof funcs[assocc[s[i]]] === 'function' ? funcs[assocc[s[i]]](x, y, ca, l, ctx, da, dl) : [x, y, ca, l];
+				ctx.stroke();
+			}
+		}
+
+		function ran(a) {//maybe can be simplified; maybe using non cumulative probabilitis; though probably simpler with cumulative
+			var i, j;
+			var r = Math.random();
+			for (i = 0, j = 0; (r > j) && (i < a.length); j = a[i], i++);
+			return Math.max(i - 1, 0);
+		}
+
+		function calc() {
+			e('result').innerHTML = '';
+			s = 'f';
+			var n = 20;//XXX iterations
+			var rs = {};
+			var assocc = {};
+			var ns = '';
+
+			rules.split("\n").forEach(function (e) {
+				[lhs, rhs] = e.split("=");
+				[chr, prob] = lhs.split(".");
+				if (typeof rs[chr] == 'undefined') {
+					rs[chr] = {'ps':[], 'rs':[]};//probabilities, replacements
+				}
+				rs[chr]['ps'].push(prob ? +("0." + prob) : 0);
+				rs[chr]['rs'].push(rhs);
+			});
+
+			for (chr in rs) {
+				arr = rs[chr]['ps'].slice(0);
+				rs[chr]['ps'] = arr.reduce(function (p, c, i) { p.push((i ? p[i - 1] : 0) + c); return p;}, []);
+			}
+
+			for (i = 0; i < n; i++) {
+				ns = '';
+				for (j = 0; j < s.length; j++) {
+					p = rs[s[j]];
+					idx = p ? ran(p['ps']) : 0;
+					ns = ns + (p ? p['rs'][idx] : s[j]);
+				}
+				s = ns;
+			}
+
+			func.split("\n").forEach(function (e) {
+				var parts = e.split("=");
+				assocc[parts[0]] = parts[1];
+			});
+
+			for (i=0; i<h; i++) {
+				map[i] = [];
+				for (j=0; j<w; j++) {
+					map[i][j] = 0;
+				}
+			}
+
+			draw(s, assocc);
+
+			contents = template.replace(/{width}/, w).replace(/{height}/, h);
+
+			for (i = 0; i < h; i++) {
+				contents = contents + "t" + pad(i, 3) + "=\"";
+				for (j = 0; j < w; j++) {
+					terr = ':';
+					switch (map[j][i]) {
+						case 0:
+							terr = ':';
+							break;
+						case 1:
+							terr = ' ';
+							break;
+						case 2:
+							terr = 'd';
+							break;
+						case 3:
+						case 4:
+						case 5:
+						case 6:
+							terr = 'g';
+							break;
+						case 7:
+						case 8:
+						case 9:
+							terr = 'h';
+							break;
+						default:
+							terr = 'm';
+					}
+					contents += terr;
+				}
+				contents = contents + "\"\n";
+			}
+			for (i = 0; i < h; i++) {
+				contents = contents + "n" + pad(i, 3) + "=\"";
+				for (j = 0; j < w; j++) {
+					contents = contents + "0";
+				}
+				contents = contents + "\"\n";
+			}
+
+			e('dyna').href = makeTextFile(contents);
+		}
+
+		function makeTextFile (text) {
+			var data = new Blob([text], {type: 'text/plain'});
+			// If we are replacing a previously generated file we need to
+			// manually revoke the object URL to avoid memory leaks.
+			if (textFile !== null) {
+			  window.URL.revokeObjectURL(textFile);
+			}
+			textFile = window.URL.createObjectURL(data);
+			return textFile;
+		  };
+
+		function spinner (ev) { ev.target.value = (+ev.target.value) + (ev.deltaY > 0 ? -1 : 1); ev.preventDefault(); }
+
+		document.addEventListener('DOMContentLoaded', function () {
+			e('calc').onclick = calc;
+			e('show').onclick = function() { e('result').innerHTML = s; };
+
+			e('dl_container').innerHTML = '<a id="dyna" download="JG.sav" href="">Download</a>';
+		}, false);
+	</script>
+	<style type="text/css">
+		body {color:lightgray;background-color:black;}
+		canvas {border:1px solid cyan; margin-top:3px;}
+		.spinner { width:3em; }
+	</style>
+</head>
+
+<body>
+	<label>Seed: <input type="text" id="seed" value="f"/></label> <br /><br />
+	<br /><br />
+	<input type="button" value="Calculate" id="calc" />
+	<br />Result image: <span id="dl_container"></span><br />
+	<canvas id="cv" width="1024" height="768"></canvas>
+	<br /><br />
+	<div>
+		<span id="show" style="text-decoration:underline;">Show result string</span>:<br />
+		<div id="result" style="word-wrap:break-word;width:120em;font-family:monospace;">
+		</div>
+	</div> 
+	<br /><br />
+</body>
+</html>
